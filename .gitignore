@@ -1,0 +1,68 @@
+# ============================================
+#  AimiliVPN .gitignore
+# ============================================
+
+# ---- Nuitka 构建产物 ----
+vpngate_manager.build/
+vpngate_manager.dist/
+*.build/
+*.dist/
+aimilivpn
+
+# ---- Debian 打包产物 ----
+*.deb
+aimilivpn_*
+
+# ---- Python 缓存 ----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ---- 运行时数据 ----
+vpngate_data/
+logs/
+*.log
+*.tmp
+*.pid
+
+# ---- IDE 和编辑器 ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ---- AI 编码助手 ----
+.gemini/
+.cursor/
+.cursorrules
+.aider*
+.codeium/
+.continue/
+.copilot/
+
+# ---- 本地开发文档（不上传 GitHub） ----
+AI开发指令.md
+功能文档.md
+AimiliVPN_Analysis_ZH.md
+
+# ---- 临时和测试文件 ----
+scratch/
+*连接配置*
+test_*.py
+*.bak
+*.orig
+
+# ---- 系统文件 ----
+.DS_Store
+Thumbs.db
+Desktop.ini
+/*.so
