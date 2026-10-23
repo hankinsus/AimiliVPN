@@ -327,4 +327,4 @@ USDT (TRON / TRC20): `TPuueui5rRCL3ECV6dWmBzeDkaTV2JEyAn`
 
 ---
 
-**Version: V1.1.6**
+**Version: V1.1.8**
