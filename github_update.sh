@@ -42,7 +42,11 @@ STEP="install"
 progress "install"
 find . -type d -name __pycache__ -prune -exec rm -rf {} +
 bash "$ROOT_DIR/scripts/select_core.sh" "$ROOT_DIR"
-modules="vpngate_manager.py proxy_server.py"
+# 清单与 install.sh 一致，覆盖所有 .py 运行模块（含 resource_sharing.py；这里 .py 只有两个入口，其余是 core/ 里的 .so，不存在的跳过）。
+modules=""
+for extra in vpngate_manager.py proxy_server.py vpn_utils.py node_pool.py tunnel_adapters.py vpngate_discovery.py resource_sharing.py ui_control_plane.py web_certificate.py country_thresholds.py process_health.py client_outbound_sync.py standby_judge.py selfcheck.py aimili_ml.py; do
+  [ -f "$extra" ] && modules="$modules $extra"
+done
 # shellcheck disable=SC2086
 python3 -m py_compile $modules
 echo "[GitHub Update] build check passed $(date -Is)"

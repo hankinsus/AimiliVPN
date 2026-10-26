@@ -259,6 +259,31 @@ aimili_fw_close() {
     fi
     return 0
 }
+# ml 入口：/usr/bin/ml 是入口；管理程序启动时 sync_ml_command 换入口会把旧文件留成 /usr/bin/ml.bak 与 /usr/bin/ml.bak.<时间戳>
+# （最多 3 份），替换中途失败还可能留下 /usr/bin/ml.tmp。卸载必须一起删，卸载自检也必须一起查。
+# 新增任何放在 /usr/bin 里的备份/临时文件，都要同步进 aimili_ml_files（教训：新增备份文件必须同步进卸载清理和卸载自检）。
+# 测试里用 AIMILI_UNINSTALL_SANDBOX=1 + AIMILI_ML_BIN 指向沙盒路径；真机不认 AIMILI_ML_BIN。
+if [ "${AIMILI_UNINSTALL_SANDBOX:-}" = "1" ] && [ -n "${AIMILI_ML_BIN:-}" ]; then
+    AIMILI_ML_BIN="${AIMILI_ML_BIN}"
+else
+    AIMILI_ML_BIN=/usr/bin/ml
+fi
+# end
+aimili_ml_files() {
+    local f
+    for f in "${AIMILI_ML_BIN}" "${AIMILI_ML_BIN}.bak" "${AIMILI_ML_BIN}".bak.* "${AIMILI_ML_BIN}.tmp"; do
+        if [ -e "$f" ] || [ -L "$f" ]; then echo "$f"; fi
+    done
+    return 0
+}
+aimili_ml_remove() {
+    local f
+    for f in $(aimili_ml_files); do rm -f "$f" >/dev/null 2>&1; done
+    return 0
+}
+aimili_ml_left() {
+    [ -n "$(aimili_ml_files)" ]
+}
 aimili_uninstall() {
     echo -e "${YELLOW}正在完全卸载 AimiliVPN...${PLAIN}"
     set +e
@@ -309,8 +334,10 @@ aimili_uninstall() {
     local nginx_changed=0 nginx_ok=1
     rm -f /lib/systemd/system/aimilivpn.service /etc/systemd/system/aimilivpn.service \
         /etc/systemd/system/aimilivpn-github-update.service /etc/systemd/system/aimilivpn-github-update.timer \
-        /etc/init.d/aimilivpn /usr/bin/ml /usr/local/sbin/aimilivpn-github-update /etc/default/aimilivpn \
+        /etc/init.d/aimilivpn /usr/local/sbin/aimilivpn-github-update /etc/default/aimilivpn \
         /etc/sysctl.d/99-aimilivpn.conf /etc/sysctl.d/99-aimilivpn-bbr.conf
+    # /usr/bin/ml 连同 ml.bak、ml.bak.<时间戳>、ml.tmp 一起删
+    aimili_ml_remove
     # 停掉并禁用 AimiliVPN 装的 SoftEther/strongSwan/xl2tpd 系统服务（占 UDP 500/4500/1701、TCP 9931），清理 SoftEther 客户端配置。
     # 只处理 AimiliVPN 装的：安装时记录在 /var/lib/aimilivpn/vpn-deps.list；旧版本没有记录时，按 apt 历史里 AimiliVPN 的安装命令判断。
     local vpn_pkgs="" vp vsvc
@@ -392,7 +419,7 @@ aimili_uninstall() {
     r=0; { [ -e /etc/nginx/conf.d/aimilivpn-production.conf ] || [ -e /etc/nginx/conf.d/aimilivpn-acme.conf ] || [ "${nginx_ok}" != "1" ]; } && r=1
     aimili_chk "nginx 站点 8443 管理入口/ACME（已删除并 reload，九合一配置未动）" "$r"
     r=0; ss -ltnH 2>/dev/null | awk '{print $4}' | grep -Eq '(^|:)8443$' && r=1; aimili_chk "8443 端口已释放" "$r"
-    r=0; [ -e /usr/bin/ml ] && r=1; aimili_chk "ml 命令 /usr/bin/ml" "$r"
+    r=0; aimili_ml_left && r=1; aimili_chk "ml 命令与备份 /usr/bin/ml、ml.bak、ml.bak.*" "$r"
     r=0; { iptables -S INPUT 2>/dev/null; ip6tables -S INPUT 2>/dev/null; } | grep -q -- '--comment aimilivpn' && r=1; aimili_chk "防火墙里为 AimiliVPN 放行的端口规则" "$r"
     r=0; [ -e /etc/cron.d/aimilivpn-acme ] && r=1; aimili_chk "AimiliVPN 证书续期任务" "$r"
     r=0; [ -e /var/lib/aimilivpn-swapfile ] && r=1; aimili_chk "AimiliVPN 交换文件" "$r"
@@ -737,7 +764,13 @@ echo -e "  -> 分支: ${DEPLOY_BRANCH}"
 echo -e "  -> 提交: ${REMOTE_VERIFY_SHA}"
 
 bash scripts/select_core.sh "${INSTALL_DIR}" || exit 1
-python3 -m py_compile vpngate_manager.py proxy_server.py
+# 清单与 github_update.sh 一致，覆盖所有 .py 运行模块（这里 .py 只有两个入口，其余模块是 core/ 里的 .so，不存在的跳过）。
+modules=""
+for extra in vpngate_manager.py proxy_server.py vpn_utils.py node_pool.py tunnel_adapters.py vpngate_discovery.py resource_sharing.py ui_control_plane.py web_certificate.py country_thresholds.py process_health.py client_outbound_sync.py standby_judge.py selfcheck.py aimili_ml.py; do
+  if [ -f "$extra" ]; then modules="$modules $extra"; fi
+done
+# shellcheck disable=SC2086
+python3 -m py_compile $modules
 echo -e "${GREEN}  -> Python 语法/构建校验通过${PLAIN}"
 
 PROXY_ENV_FILE="/etc/default/aimilivpn"
@@ -860,7 +893,7 @@ sys.path.insert(0, "/opt/aimilivpn")
 try:
     import aimili_ml
 except ImportError:
-    sys.stderr.write("AimiliVPN 未安装或程序文件缺失（/opt/aimilivpn）。\n")
+    sys.stderr.write("AimiliVPN 的 ml 程序文件缺失（/opt/aimilivpn/aimili_ml），请在网页里更新或重新安装。\n")
     raise SystemExit(1)
 aimili_ml.main()
 EOF
